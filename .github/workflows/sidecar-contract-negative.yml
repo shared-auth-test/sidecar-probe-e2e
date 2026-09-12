@@ -1,0 +1,44 @@
+name: sidecar-contract-negative
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reject-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ores-otel/ores-otel-sidecar.rs
+          ref: 357cca21dfe6878c1855c04d60ea57353284b509
+          path: .contract-owner
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm install --no-save --package-lock=false --ignore-scripts @typespec/compiler@1.15.0 @typespec/json-schema@1.15.0
+      - name: Render invalid TOML fixtures
+        run: |
+          mkdir -p .tjsv-instances/OresSidecarFile/invalid
+          python - <<'PY'
+          import json, pathlib, tomllib
+          source = pathlib.Path('tests/fixtures/sidecar')
+          target = pathlib.Path('.tjsv-instances/OresSidecarFile/invalid')
+          for name in ('obsolete', 'empty'):
+              data = tomllib.loads((source / f'{name}.toml').read_text())
+              (target / f'{name}.json').write_text(json.dumps(data, sort_keys=True))
+          PY
+      - name: Both first-class authorities must reject drift
+        uses: ORESoftware/typespec-json-schema-validator@7241f8e52dcc4518c72f0fdb5152d6cf66c86656
+        with:
+          typespec: .contract-owner/contracts/sidecar/main.tsp
+          schema: .contract-owner/contracts/sidecar/authored.schema.json
+          instances: .tjsv-instances
+          report: .tjsv-instances/report.json
+          sarif: ''
+          quiet: 'false'
