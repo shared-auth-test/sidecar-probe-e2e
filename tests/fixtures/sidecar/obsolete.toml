@@ -1,0 +1,13 @@
+protocol = "ores.sidecar-config.v1"
+
+[runtimeUpdates]
+provider = "ores-redis-lru-cache"
+
+[[sidecars]]
+name = "legacy-sidecar"
+enabled = true
+bindIp = "127.0.0.1"
+bindPort = 9090
+loopbackOnly = true
+runtimeNamespace = "legacy-sidecar"
+runtimeKeys = []
