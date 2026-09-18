@@ -9,16 +9,16 @@ jobs:
   reject-drift:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: ores-otel/ores-otel-sidecar.rs
           ref: 357cca21dfe6878c1855c04d60ea57353284b509
           path: .contract-owner
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - run: npm install --no-save --package-lock=false --ignore-scripts @typespec/compiler@1.15.0 @typespec/json-schema@1.15.0
