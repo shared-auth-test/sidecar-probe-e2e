@@ -31,12 +31,21 @@ jobs:
         with:
           repository: ORESoftware/ores-compose
           ref: ${{ env.COMPOSE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
           path: compose
           persist-credentials: false
           fetch-depth: 1
       - name: Assert exact ores-compose head
         shell: bash
         run: test "$(git -C compose rev-parse HEAD)" = "$COMPOSE_SHA"
+      - name: Configure scoped private Git dependency access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
       - name: Install Rust 1.98.1
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
         with:
@@ -113,6 +122,7 @@ jobs:
         with:
           repository: ORESoftware/ores-compose
           ref: ${{ env.COMPOSE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
           path: compose
           persist-credentials: false
           fetch-depth: 1
@@ -121,6 +131,7 @@ jobs:
         with:
           repository: ORESoftware/ores-proc-isolation-cli
           ref: ${{ env.PROC_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
           path: isolation
           persist-credentials: false
           fetch-depth: 1
@@ -129,6 +140,14 @@ jobs:
         run: |
           test "$(git -C compose rev-parse HEAD)" = "$COMPOSE_SHA"
           test "$(git -C isolation rev-parse HEAD)" = "$PROC_SHA"
+      - name: Configure scoped private Git dependency access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
       - name: Install Rust 1.98.1
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
         with:
