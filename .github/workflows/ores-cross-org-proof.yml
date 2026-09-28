@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  WASMX_SHA: 819d8d1f2efee0be77070c232ab52f3b1f463b48
+  WASMX_SHA: 79faf3df3ce78fa3902ededc04912261fcff3312
 
 jobs:
   wasmx-rust:
