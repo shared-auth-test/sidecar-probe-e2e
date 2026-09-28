@@ -1,0 +1,232 @@
+name: ores cross-org exact-head proof
+
+on:
+  push:
+    branches:
+      - proof/ores-cross-org-20260928
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_SHA: 20aa873ee10359a63043f4284ba6e2e6e533f37f
+  WASMX_SHA: 043b7c3efe803f7c73488db0eae7e4a68dc64ca3
+  PROC_SHA: fb9ecfeb5c791dfcf3eec9f6747898886d63e473
+
+jobs:
+  compose-rust:
+    name: compose-rust-${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-15
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact ores-compose head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_SHA }}
+          path: compose
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Assert exact ores-compose head
+        shell: bash
+        run: test "$(git -C compose rev-parse HEAD)" = "$COMPOSE_SHA"
+      - name: Install Rust 1.98.1
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.98.1
+          components: clippy,rustfmt
+      - name: Format
+        if: matrix.os == 'ubuntu-24.04'
+        working-directory: compose
+        run: cargo fmt --all --check
+      - name: Check
+        working-directory: compose
+        run: cargo check --all-targets --all-features
+      - name: Test
+        working-directory: compose
+        run: cargo test --all-targets --all-features
+      - name: Clippy
+        working-directory: compose
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  wasmx-rust:
+    name: wasmx-rust-${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-15
+          - windows-2025
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact wasmx head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: wasm-xprs/wasmx-desktop-daemon
+          ref: ${{ env.WASMX_SHA }}
+          path: wasmx
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Assert exact wasmx head
+        shell: bash
+        run: test "$(git -C wasmx rev-parse HEAD)" = "$WASMX_SHA"
+      - name: Install Rust 1.96.0
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.96.0
+          components: clippy,rustfmt
+      - name: Format
+        if: matrix.os == 'ubuntu-24.04'
+        working-directory: wasmx
+        run: cargo fmt --all -- --check
+      - name: Check
+        working-directory: wasmx
+        run: cargo check --all-targets
+      - name: Test
+        working-directory: wasmx
+        run: cargo test --all-targets
+      - name: Clippy
+        if: matrix.os != 'windows-2025'
+        working-directory: wasmx
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (Windows cfg)
+        if: matrix.os == 'windows-2025'
+        working-directory: wasmx
+        run: cargo clippy --all-targets -- -D warnings -A unused-variables
+
+  macos-isolation-e2e:
+    name: macos-isolation-e2e
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact ores-compose head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_SHA }}
+          path: compose
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout exact process-isolation head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-proc-isolation-cli
+          ref: ${{ env.PROC_SHA }}
+          path: isolation
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Assert exact source heads
+        shell: bash
+        run: |
+          test "$(git -C compose rev-parse HEAD)" = "$COMPOSE_SHA"
+          test "$(git -C isolation rev-parse HEAD)" = "$PROC_SHA"
+      - name: Install Rust 1.98.1
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.98.1
+      - name: Build exact heads
+        shell: bash
+        run: |
+          cargo build --manifest-path isolation/Cargo.toml
+          cargo build --manifest-path compose/Cargo.toml
+      - name: Stress collision-safe compose temp roots
+        shell: bash
+        run: |
+          set -euo pipefail
+          pids=()
+          for i in {1..8}; do
+            (
+              cargo test --manifest-path compose/Cargo.toml --lib                 up_orchestrator::runtime::tests::revalidates_working_directory_before_replica_spawn                 -- --exact --nocapture
+            ) >"$RUNNER_TEMP/compose-race-$i.log" 2>&1 &
+            pids+=("$!")
+          done
+          failed=0
+          for pid in "${pids[@]}"; do
+            if ! wait "$pid"; then
+              failed=1
+            fi
+          done
+          if [[ "$failed" != 0 ]]; then
+            cat "$RUNNER_TEMP"/compose-race-*.log >&2
+            exit 1
+          fi
+      - name: Prove ores-compose launches through required process isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/ores-compose-test-org-proof"
+          rm -rf "$root"
+          mkdir -p "$root/service"
+          cat >"$root/.ores-compose.yaml" <<'YAML'
+          schema_version: ores.compose.v1
+          project: test-org-proof
+          allow_lazy_start: false
+          services:
+            sleeper:
+              runtime: host
+              command: ["/bin/sh", "-c", "echo $$ > service.pid; exec /bin/sleep 30"]
+              working_dir: service
+          YAML
+
+          export ORES_COMPOSE_PROCESS_ISOLATION=required
+          export ORES_PROC_ISOLATION_BIN="$GITHUB_WORKSPACE/isolation/target/debug/ores-proc-isolation"
+
+          "$GITHUB_WORKSPACE/compose/target/debug/ores-compose"             --skip-zed-pkg             --skip-rpc-gen             --skip-source-sync             up "$root/.ores-compose.yaml" >"$RUNNER_TEMP/compose-proof.log" 2>&1 &
+          compose_pid=$!
+          target_pid=''
+
+          cleanup() {
+            kill -INT "$compose_pid" 2>/dev/null || true
+            wait "$compose_pid" 2>/dev/null || true
+            if [[ -n "$target_pid" ]]; then
+              kill "$target_pid" 2>/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for _ in {1..60}; do
+            if grep -q '"event":"compose_ready"' "$RUNNER_TEMP/compose-proof.log"; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$compose_pid" 2>/dev/null; then
+              cat "$RUNNER_TEMP/compose-proof.log" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != 1 ]]; then
+            cat "$RUNNER_TEMP/compose-proof.log" >&2
+            echo "compose did not become ready through ores-proc-isolation" >&2
+            exit 1
+          fi
+
+          grep -q '"event":"process_isolation_enabled"' "$RUNNER_TEMP/compose-proof.log"
+          target_pid="$(cat "$root/service/service.pid")"
+          kill -0 "$target_pid"
+
+          kill -INT "$compose_pid"
+          wait "$compose_pid"
+
+          for _ in {1..40}; do
+            if ! kill -0 "$target_pid" 2>/dev/null; then
+              target_pid=''
+              break
+            fi
+            sleep 0.1
+          done
+          if [[ -n "$target_pid" ]] && kill -0 "$target_pid" 2>/dev/null; then
+            echo "sandboxed service pid $target_pid survived ores-compose shutdown" >&2
+            exit 1
+          fi
+          trap - EXIT
