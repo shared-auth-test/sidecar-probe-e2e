@@ -1,0 +1,52 @@
+name: wasmx Windows capability stress
+
+on:
+  push:
+    branches:
+      - proof/ores-cross-org-20260928
+    paths:
+      - '.github/workflows/wasmx-windows-stress.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  WASMX_SHA: 819d8d1f2efee0be77070c232ab52f3b1f463b48
+
+jobs:
+  windows-capability-stress:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact wasmx head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: wasm-xprs/wasmx-desktop-daemon
+          ref: ${{ env.WASMX_SHA }}
+          path: wasmx
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Assert exact wasmx head
+        shell: bash
+        run: test "$(git -C wasmx rev-parse HEAD)" = "$WASMX_SHA"
+      - name: Install Rust 1.96.0
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.96.0
+          components: clippy,rustfmt
+      - name: Compile all test targets once
+        working-directory: wasmx
+        run: cargo test --all-targets --no-run
+      - name: Repeat full test suite
+        shell: bash
+        working-directory: wasmx
+        run: |
+          set -euo pipefail
+          for i in {1..8}; do
+            echo "wasmx Windows capability stress pass $i/8"
+            cargo test --all-targets -- --test-threads=1
+          done
+      - name: Windows Clippy
+        working-directory: wasmx
+        run: cargo clippy --all-targets -- -D warnings -A unused-variables
